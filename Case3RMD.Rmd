@@ -1,0 +1,157 @@
+---
+title: "Monte Carlo and Investment Strategy"
+subtitle: "Quantitative Methods II, Course 5320"
+output: 
+  pdf_document:
+    fig_caption: yes
+    highlight: pygments
+    keep_tex: yes
+    number_sections: yes
+    toc: yes
+latex_engine: xelatex
+
+  
+date: '2022-10-09'
+
+header-includes: 
+  - \usepackage{float}
+  - \usepackage{longtable}
+---
+
+\centering
+
+\raggedright
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+\newpage
+
+
+
+Before approaching the task, we use the seed() function to make our generated values reproducible.
+
+```{r}
+set.seed(1)
+```
+
+# Task 1
+
+### Write an R function Sim(M,...) with an input _M_ which generates _M_ scenarios of price evolutions for the risky asset and returns an M×3 matrix where each row contains one of these scenarios.
+
+```{r,}
+SIM <- function(M,mean,standard_deviation){
+  #Define the original random variables
+  x1 <- rnorm(M, mean = mean, sd = standard_deviation)
+  x2 <- rnorm(M, mean = mean, sd = standard_deviation)
+  #Define s0
+  s0 <- 100
+  #Calculate the prices for the risky asset
+  s1 <- s0 * exp(x1)
+  s2 <- s1 * exp(x2)
+  #Bind them into a 3xM Matrix
+  n <- cbind(s0,s1,s2)
+  x <- matrix(data = n, nrow = M, ncol = 3)
+  colnames(x) = c("s0","s1","s2")
+  #Return the Matrix
+  return(x)
+  }
+```
+
+# Task 2
+
+A trader is interested in buying a European option (quadrupled capped call) with maturity in two years and the payoff function
+$$f(s) = 4*min[20, max(0, s - 100)]$$
+The buyer
+and seller agree on the premium
+$$p = E[f(S2)]$$
+
+
+### Implement the function f and generate at least 1000 samples of $f(S2)$.
+```{r,}
+s <- SIM(M = 1000,mean = 0.04,standard_deviation = 0.2)
+```
+
+### Use this sample to obtain an approximation $f(s2)$ of _p_ and provide the 3-standard error region around _p_.
+```{r,}
+#construct and apply the payoff function f
+f <- function(s){4*pmin(20, pmax(0,s-100))}
+s2 <-f(s[,3])
+
+#calculate the mean
+p <- mean(s2)
+p
+#calculate the standard error
+SE <- sd(s2)/sqrt(length(s2))
+SE
+#calculate the error region
+errorregion <- c(p-3*SE, p+3*SE)
+errorregion
+```
+# Task 3
+The seller decides to trade on the market using the premium _p_. His money is invested into $H_0 = 1.25$ units of the risky asset, with the rest being used to buy the riskless asset.After one year, he decides to buy or sell risky assets. The number of the assets bought can be calculated by the following formula:
+
+$$h(s) = 5(\phi(s - 95\div25) - \phi(s - 115\div25))$$
+It has to be added that negative assets "bought" mean assets sold.
+
+After two years, the seller sells all his assets, with the gain being described in the following formula:
+
+$$G = h(S_1)*S_2 + b_2 - f(S_2)$$
+
+### Write an R function that takes the scenario matrix produced from Sim of task 1 as input and returns the gain in each scenario as a vector. Here, you should use for _p_ the value which you obtained in Task 2. 
+```{r,}
+#Definition of the function
+G <- function(S, r, b0, H0){
+  #formula for risky assets bought
+  h <- function(sp){5*(pnorm((sp-95)/25) - pnorm((sp-115)/25))}
+  H1 <- h(S[,2])
+  #Calculate wealth per year 
+  b1 <- (b0-H0*S[,1])*exp(r)
+  b2 <- (b1 - (H1-H0)*S[,2])*exp(r)
+  #Total gain of the seller
+  x <- cbind(H1*S[,3]+b2-s2)
+  return(x)
+}
+#Example for function execution
+x <- G(S = s, r = 0.02, b0 = p, H0 = 1.25 )
+```
+
+# Task 4
+
+### Visualise the possible gains for the seller across at least 1000 scenarios via making suitable plots.
+
+We start out with a scatterplot of our values, with a red horizontal line indicating the average gains. The plot very clearly shows that the seller does indeed make a profit on average.
+```{r, echo = FALSE, out.width='350px', dpi=300, fig.align="center"}
+#Building the scatterplot
+plot(G(S = s, r = 0.02, b0 = p, H0 = 1.25), ylab = "Gain/Loss", xlab = "Iterations", main = "Scatterplot of seller's gain/loss")
+#Horizontal line showing average price
+abline(h = mean(G(S = s, r = 0.02, b0 = p, H0 = 1.25)), col ="red")
+```
+
+Since we want to find out if the option is overpriced, we can show our data more clearly in a histogram. Here we contrast the average in red with the option premium in green.
+```{r, echo = FALSE, out.width='350px', dpi=300, fig.align="center"}
+#Building the histogram
+hist(G(S = s, r = 0.02, b0 = p, H0 = 1.25), breaks = 50, freq = TRUE, xlab = "Gain/Loss", main = "Histogram of of seller's gain/loss")
+#Vertical line showing average price
+abline(v = mean(G(S = s, r = 0.02, b0 = p, H0 = 1.25)), col ="red")
+#Vertical line showing premium
+abline(v = p, col ="green")
+```
+\newpage
+Another useful visualisation is the boxplot, which shows that the median of the gains is positive too, illustrating with it's closeness to the average that the gains are consistent and not the result of outliers. 
+```{r, echo = FALSE, out.width='350px', dpi=300, fig.align="center"}
+boxplot(G(S = s, r = 0.02, b0 = p, H0 = 1.25), ylab = "Gain/Loss", main = "Boxplot of seller's gain/losst")
+#Horizontal line showing average price
+abline(h = median(G(S = s, r = 0.02, b0 = p, H0 = 1.25)), col ="red")
+#Horizontal line showing premium
+abline(h = p, col ="green")
+```
+
+
+# Task 5
+
+### Judge whether the option is overpriced, underpriced or exactly right when sold exactly at $p = E[f(S2)]$.
+
+We can clearly see in the results of Task 4 that the option is overpriced, with the premium starkly exceeding the average gains. Options are priced exactly right when the premium corresponds to the expected average gains. Options being overpriced is very usual though, since uncertainty and volatility are often overstated. 
